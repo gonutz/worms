@@ -72,12 +72,16 @@ func main() {
 	)
 	check(device.SetFVF(vertexFmt))
 
+	// load level
+	levelCanvas, err := xcf.LoadFromFile("map.xcf")
+	check(err)
+
 	// create a back buffer texture to render everything to pixel-perfectly,
 	// then stretch-blit that onto the actual backbuffer with some good-looking
 	// interpolation
 	backbuf, err := device.CreateTexture(
-		400,
-		200,
+		uint(levelCanvas.Width),
+		uint(levelCanvas.Height),
 		1,
 		d3d9.USAGE_RENDERTARGET,
 		d3d9.FMT_A8R8G8B8,
@@ -86,10 +90,6 @@ func main() {
 	)
 	check(err)
 	defer backbuf.Release()
-
-	// load level
-	levelCanvas, err := xcf.LoadFromFile("map.xcf")
-	check(err)
 
 	background := levelCanvas.GetLayerByName("background").RGBA
 	swapRB(background)
