@@ -65,20 +65,27 @@ func main() {
 	check(device.SetRenderState(d3d9.RS_ALPHABLENDENABLE, 1))
 	check(device.SetRenderState(d3d9.RS_SRCBLEND, d3d9.BLEND_SRCALPHA))
 	check(device.SetRenderState(d3d9.RS_DESTBLEND, d3d9.BLEND_INVSRCALPHA))
-	//// TODO does this work?
-	//check(device.SetTextureStageState(0, d3d9.TSS_COLOROP, d3d9.TOP_MODULATE))
-	//check(device.SetTextureStageState(0, d3d9.TSS_COLORARG1, d3d9.TA_TEXTURE))
-	//check(device.SetTextureStageState(0, d3d9.TSS_COLORARG2, d3d9.TA_CURRENT))
-	//check(device.SetTextureStageState(0, d3d9.TSS_ALPHAOP, d3d9.TOP_MODULATE))
-	//check(device.SetTextureStageState(0, d3d9.TSS_ALPHAARG1, d3d9.TA_CURRENT))
-	//check(device.SetTextureStageState(0, d3d9.TSS_ALPHAARG2, d3d9.TA_TEXTURE))
-	//
 
 	const (
 		vertexFmt       = d3d9.FVF_XYZRHW | d3d9.FVF_TEX1
 		floatsPerVertex = 6
 	)
 	check(device.SetFVF(vertexFmt))
+
+	// create a back buffer texture to render everything to pixel-perfectly,
+	// then stretch-blit that onto the actual backbuffer with some good-looking
+	// interpolation
+	backbuf, err := device.CreateTexture(
+		400,
+		200,
+		1,
+		d3d9.USAGE_RENDERTARGET,
+		d3d9.FMT_A8R8G8B8,
+		d3d9.POOL_DEFAULT,
+		0,
+	)
+	check(err)
+	defer backbuf.Release()
 
 	// load level
 	levelCanvas, err := xcf.LoadFromFile("map.xcf")
@@ -122,28 +129,45 @@ func main() {
 	}
 
 	// run main game loop
+	scale := 1.0
 	win.RunMainGameLoop(func() {
 		time.Sleep(0)
+
+		backBufSurface, err := backbuf.GetSurfaceLevel(0)
+		check(err)
+		defer backBufSurface.Release()
+
+		check(device.SetSamplerState(0, d3d9.SAMP_MINFILTER, d3d9.TEXF_NONE))
+		check(device.SetSamplerState(0, d3d9.SAMP_MAGFILTER, d3d9.TEXF_NONE))
+		check(device.SetRenderTarget(0, backBufSurface))
 
 		device.Clear(nil, d3d9.CLEAR_TARGET, d3d9.ColorRGB(50, 100, 200), 1, 0)
 		device.BeginScene()
 
-		scale := 3
 		renderTex(
 			device, backTex,
 			0, 0,
-			scale*background.Bounds().Dx(), scale*background.Bounds().Dy(),
+			background.Bounds().Dx(), background.Bounds().Dy(),
 		)
 		renderTex(
 			device, levelTex,
 			0, 0,
-			scale*level.Bounds().Dx(), scale*level.Bounds().Dy(),
+			level.Bounds().Dx(), level.Bounds().Dy(),
 		)
 		renderTex(
 			device, foreTex,
 			0, 0,
-			scale*foreground.Bounds().Dx(), scale*foreground.Bounds().Dy(),
+			foreground.Bounds().Dx(), foreground.Bounds().Dy(),
 		)
+
+		check(device.SetSamplerState(0, d3d9.SAMP_MINFILTER, d3d9.TEXF_LINEAR))
+		check(device.SetSamplerState(0, d3d9.SAMP_MAGFILTER, d3d9.TEXF_LINEAR))
+		bb, err := device.GetBackBuffer(0, 0, d3d9.BACKBUFFER_TYPE_MONO)
+		check(err)
+		defer bb.Release()
+		check(device.SetRenderTarget(0, bb))
+		scale *= 1.001
+		renderTex(device, backbuf, 0, 0, int(scale*400+0.5), int(scale*200+0.5))
 
 		device.EndScene()
 		device.Present(nil, nil, 0, nil)
