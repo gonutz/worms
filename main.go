@@ -22,8 +22,16 @@ func main() {
 	var msg win.MessageHandler
 	window, err := win.NewWindow(opts, msg.Callback)
 	check(err)
+	var windowedPlacement w32.WINDOWPLACEMENT
 	msg.OnKeyDown = func(key uintptr, _ win.KeyOptions) {
-		if key == w32.VK_ESCAPE {
+		switch key {
+		case w32.VK_F11:
+			if win.IsFullscreen(window) {
+				win.DisableFullscreen(window, windowedPlacement)
+			} else {
+				windowedPlacement = win.EnableFullscreen(window)
+			}
+		case w32.VK_ESCAPE:
 			win.CloseWindow(window)
 		}
 	}
