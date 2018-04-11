@@ -2,11 +2,13 @@ package main
 
 import (
 	"image"
+	"image/color"
 	"runtime"
 	"time"
 	"unsafe"
 
 	"github.com/gonutz/d3d9"
+	"github.com/gonutz/tic"
 	"github.com/gonutz/w32"
 	"github.com/gonutz/win"
 	"github.com/gonutz/xcf"
@@ -17,6 +19,8 @@ func main() {
 	runtime.LockOSThread()
 	win.HideConsoleWindow()
 
+	var updatePartialTexture func() // TODO remove this debug function
+
 	opts := win.DefaultOptions()
 	opts.Title = "Worms"
 	var msg win.MessageHandler
@@ -25,6 +29,8 @@ func main() {
 	var windowedPlacement w32.WINDOWPLACEMENT
 	msg.OnKeyDown = func(key uintptr, _ win.KeyOptions) {
 		switch key {
+		case w32.VK_SPACE:
+			updatePartialTexture()
 		case w32.VK_F11:
 			if win.IsFullscreen(window) {
 				win.DisableFullscreen(window, windowedPlacement)
@@ -104,6 +110,27 @@ func main() {
 	backTex, err := rgbaToTexture(device, background)
 	check(err)
 	defer backTex.Release()
+
+	updatePartialTexture = func() {
+		defer tic.Toc()("update texture")
+		const (
+			left   = 50
+			top    = 10
+			width  = 22
+			height = 44
+		)
+		for x := 0; x < width; x++ {
+			for y := 0; y < height; y++ {
+				background.SetRGBA(left+x, top+y, color.RGBA{
+					R: 0,
+					G: 0,
+					B: 255,
+					A: 255,
+				})
+			}
+		}
+		updatePartialRect(backTex, background, left, top, width, height)
+	}
 
 	level := levelCanvas.GetLayerByName("level").RGBA
 	swapRB(level)
@@ -207,4 +234,25 @@ func rgbaToTexture(device *d3d9.Device, img *image.RGBA) (*d3d9.Texture, error) 
 		return nil, err
 	}
 	return tex, nil
+}
+
+func updatePartialRect(tex *d3d9.Texture, img *image.RGBA, left, top, width, height int) error {
+	rect, err := tex.LockRect(
+		0,
+		&d3d9.RECT{
+			Left:   int32(left),
+			Top:    int32(top),
+			Right:  int32(left + width),
+			Bottom: int32(top + height),
+		},
+		d3d9.LOCK_DISCARD,
+	)
+	if err != nil {
+		return err
+	}
+	rect.SetAllBytes(
+		img.Pix[img.PixOffset(left, top):img.PixOffset(left+width, top+height-1)],
+		img.Stride,
+	)
+	return tex.UnlockRect(0)
 }
