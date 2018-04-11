@@ -111,12 +111,6 @@ func main() {
 	check(err)
 	defer levelTex.Release()
 
-	foreground := levelCanvas.GetLayerByName("foreground").RGBA
-	swapRB(foreground)
-	foreTex, err := rgbaToTexture(device, foreground)
-	check(err)
-	defer foreTex.Release()
-
 	renderTex := func(device *d3d9.Device, tex *d3d9.Texture, x, y, width, height int) {
 		device.SetTexture(0, tex)
 		w := float32(width)
@@ -161,11 +155,6 @@ func main() {
 			device, levelTex,
 			0, 0,
 			level.Bounds().Dx(), level.Bounds().Dy(),
-		)
-		renderTex(
-			device, foreTex,
-			0, 0,
-			foreground.Bounds().Dx(), foreground.Bounds().Dy(),
 		)
 
 		check(device.SetSamplerState(0, d3d9.SAMP_MINFILTER, d3d9.TEXF_LINEAR))
