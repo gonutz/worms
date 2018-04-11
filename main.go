@@ -174,7 +174,7 @@ func main() {
 		check(err)
 		defer bb.Release()
 		check(device.SetRenderTarget(0, bb))
-		scale *= 1.001
+		scale *= 1.005
 		renderTex(device, backbuf, 0, 0, int(scale*400+0.5), int(scale*200+0.5))
 
 		device.EndScene()
