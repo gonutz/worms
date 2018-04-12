@@ -127,7 +127,7 @@ func main() {
 		)
 		for x := -radius; x <= radius; x++ {
 			for y := -radius; y <= radius; y++ {
-				if x*x+y*y <= radius*radius {
+				if x*x+y*y <= radius*radius+1 {
 					i := level.PixOffset(left+x, top+y)
 					if level.Pix[i+3] < 50 {
 						level.Pix[i+3] = 0
