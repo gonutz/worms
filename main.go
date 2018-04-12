@@ -2,7 +2,6 @@ package main
 
 import (
 	"image"
-	"image/color"
 	"runtime"
 	"time"
 	"unsafe"
@@ -27,10 +26,12 @@ func main() {
 	window, err := win.NewWindow(opts, msg.Callback)
 	check(err)
 	var windowedPlacement w32.WINDOWPLACEMENT
-	msg.OnKeyDown = func(key uintptr, _ win.KeyOptions) {
+	msg.OnKeyDown = func(key uintptr, opt win.KeyOptions) {
 		switch key {
 		case w32.VK_SPACE:
-			updatePartialTexture()
+			if !opt.WasDown() {
+				updatePartialTexture()
+			}
 		case w32.VK_F11:
 			if win.IsFullscreen(window) {
 				win.DisableFullscreen(window, windowedPlacement)
@@ -111,32 +112,36 @@ func main() {
 	check(err)
 	defer backTex.Release()
 
-	updatePartialTexture = func() {
-		defer tic.Toc()("update texture")
-		const (
-			left   = 50
-			top    = 10
-			width  = 22
-			height = 44
-		)
-		for x := 0; x < width; x++ {
-			for y := 0; y < height; y++ {
-				background.SetRGBA(left+x, top+y, color.RGBA{
-					R: 0,
-					G: 0,
-					B: 255,
-					A: 255,
-				})
-			}
-		}
-		updatePartialRect(backTex, background, left, top, width, height)
-	}
-
 	level := levelCanvas.GetLayerByName("level").RGBA
 	swapRB(level)
 	levelTex, err := rgbaToTexture(device, level)
 	check(err)
 	defer levelTex.Release()
+
+	updatePartialTexture = func() {
+		defer tic.Toc()("update texture")
+		const (
+			left   = 100
+			top    = 90
+			radius = 21
+		)
+		for x := -radius; x <= radius; x++ {
+			for y := -radius; y <= radius; y++ {
+				if x*x+y*y <= radius*radius {
+					i := level.PixOffset(left+x, top+y)
+					if level.Pix[i+3] < 50 {
+						level.Pix[i+3] = 0
+					} else {
+						level.Pix[i+3] -= 50
+					}
+				}
+			}
+		}
+		updatePartialRect(
+			levelTex, level,
+			left-radius, top-radius, 2*radius+1, 2*radius+1,
+		)
+	}
 
 	renderTex := func(device *d3d9.Device, tex *d3d9.Texture, x, y, width, height int) {
 		device.SetTexture(0, tex)
