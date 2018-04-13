@@ -14,6 +14,8 @@ import (
 	"github.com/gonutz/xcf"
 )
 
+const debug = true
+
 func main() {
 	defer win.HandlePanics("worms")
 	runtime.LockOSThread()
@@ -169,32 +171,23 @@ func main() {
 	worm.hitboxTex, err = rgbaToTexture(device, worm.hitboxImg)
 	check(err)
 	defer worm.hitboxTex.Release()
-	worm.x, worm.y = 110, 15
-
-	moveWorm := func(dx, dy int) {
-		x, y := worm.x+dx, worm.y+dy
-		for _, p := range worm.hitbox {
-			if level.RGBAAt(x+p.x, y+p.y).A > 127 {
-				return
-			}
-		}
-		worm.x, worm.y = x, y
-	}
+	worm.x, worm.y = 50, 15
+	dropWorm(&worm, level)
 
 	msg.OnKeyDown = func(key uintptr, opt win.KeyOptions) {
 		if opt.WasDown() {
-			return
+			//return
 		}
 
 		switch key {
 		case w32.VK_RIGHT:
-			moveWorm(1, 0)
+			moveHor(&worm, level, 1)
 		case w32.VK_LEFT:
-			moveWorm(-1, 0)
+			moveHor(&worm, level, -2)
 		case w32.VK_UP:
-			moveWorm(0, -1)
+			moveWorm(&worm, level, 0, -1)
 		case w32.VK_DOWN:
-			moveWorm(0, 1)
+			moveWorm(&worm, level, 0, 1)
 		case w32.VK_SPACE:
 			updatePartialTexture()
 		case w32.VK_F11:
@@ -213,6 +206,21 @@ func main() {
 	win.RunMainGameLoop(func() {
 		time.Sleep(0)
 
+		// move the worm
+		if !worm.onGround {
+			worm.fallSpeed++
+		}
+		dy := worm.fallSpeed
+		for dy > 0 {
+			worm.y++
+			if collides(&worm, level) {
+				worm.y--
+				worm.onGround = true
+				break
+			}
+		}
+
+		// render everything
 		backBufSurface, err := backbuf.GetSurfaceLevel(0)
 		check(err)
 		defer backBufSurface.Release()
@@ -234,17 +242,29 @@ func main() {
 			0, 0,
 			level.Bounds().Dx(), level.Bounds().Dy(),
 		)
-		renderTex(
-			device, worm.leftTex,
-			worm.x, worm.y,
-			worm.left.Bounds().Dx(), worm.left.Bounds().Dy(),
-		)
-		renderTex(
-			device, worm.hitboxTex,
-			worm.x, worm.y,
-			worm.left.Bounds().Dx(), worm.left.Bounds().Dy(),
-		)
+		if worm.facingLeft {
+			renderTex(
+				device, worm.leftTex,
+				worm.x, worm.y,
+				worm.left.Bounds().Dx(), worm.left.Bounds().Dy(),
+			)
+		} else {
+			renderTex(
+				device, worm.rightTex,
+				worm.x, worm.y,
+				worm.right.Bounds().Dx(), worm.right.Bounds().Dy(),
+			)
+		}
+		if debug {
+			renderTex(
+				device, worm.hitboxTex,
+				worm.x, worm.y,
+				worm.left.Bounds().Dx(), worm.left.Bounds().Dy(),
+			)
+		}
 
+		check(device.SetSamplerState(0, d3d9.SAMP_ADDRESSU, d3d9.TADDRESS_BORDER))
+		check(device.SetSamplerState(0, d3d9.SAMP_ADDRESSV, d3d9.TADDRESS_BORDER))
 		check(device.SetSamplerState(0, d3d9.SAMP_MINFILTER, d3d9.TEXF_LINEAR))
 		check(device.SetSamplerState(0, d3d9.SAMP_MAGFILTER, d3d9.TEXF_LINEAR))
 		bb, err := device.GetBackBuffer(0, 0, d3d9.BACKBUFFER_TYPE_MONO)
@@ -325,6 +345,9 @@ type worm struct {
 	left, right       *image.RGBA
 	leftTex, rightTex *d3d9.Texture
 	x, y              int
+	facingLeft        bool
+	onGround          bool
+	fallSpeed         int
 }
 
 func parseWorm(xcfFile string) worm {
@@ -384,20 +407,104 @@ func parseHitbox(img *xcf.Layer) []point {
 	return points
 }
 
-type point struct {
-	x, y int
+func collides(w *worm, level *image.RGBA) bool {
+	for _, p := range w.hitbox {
+		if level.RGBAAt(w.x+p.x, w.y+p.y).A > 127 {
+			return true
+		}
+	}
+	return false
 }
 
-func pt(x, y int) point { return point{x: x, y: y} }
+func dropWorm(w *worm, level *image.RGBA) {
+	for w.y+w.left.Bounds().Dy() > 0 && collides(w, level) {
+		w.y--
+	}
+	for w.y < level.Bounds().Dy() && !collides(w, level) {
+		w.y++
+	}
+	w.y--
+	w.onGround = true
+}
 
-type byX []point
+func moveHor(w *worm, level *image.RGBA, dx int) {
+	if !w.onGround || dx == 0 {
+		return
+	}
 
-func (p byX) Len() int           { return len(p) }
-func (p byX) Less(i, j int) bool { return p[i].x < p[j].x }
-func (p byX) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+	if dx > 0 {
+		w.facingLeft = false
+	}
+	if dx < 0 {
+		w.facingLeft = true
+	}
 
-type byY []point
+	dxSquare := square(dx) // remember this, dx will be changed in the for-loop
+	origX, origY := w.x, w.y
+	step := dx / abs(dx) // 1 or -1
+	for dx != 0 {
+		// step one pixel to the side
+		dx -= step
+		w.x += step
+		if collides(w, level) {
+			// if we hit something, this might be a wall that cannot be overcome
+			// or it is just a one or two pixel step that we can climb
+			w.y--
+			if !collides(w, level) {
+				// fine, move one pixel up
+			} else {
+				w.y--
+				if !collides(w, level) {
+					// fine, move twp pixels up
+				} else {
+					// we hit a wall, do not move up, go back one step and stay
+					// there
+					w.y += 2
+					w.x -= step
+					return
+				}
+			}
+		} else {
+			// if we hit nothing, we might not stand on the ground anymore
+			w.y++
+			if collides(w, level) {
+				// we are still on the ground, everything is fine, keep moving
+				// horizontally
+				w.y--
+			} else {
+				w.y++
+				if collides(w, level) {
+					// we are still on the ground, everything is fine, keep
+					// moving horizontally, this means 2 pixels step-down
+					w.y--
+				} else {
+					// we are not on the ground anymore, we are falling
+					w.y -= 2
+					w.onGround = false
+					w.fallSpeed = 0
+				}
+			}
+		}
+		// if we already travelled dx or more, quit here so we do not move
+		// insanely fast up-hill or down-hill
+		if square(w.x-origX)+square(w.y-origY) >= dxSquare {
+			break
+		}
+	}
+}
 
-func (p byY) Len() int           { return len(p) }
-func (p byY) Less(i, j int) bool { return p[i].y < p[j].y }
-func (p byY) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func moveWorm(w *worm, level *image.RGBA, dx, dy int) {
+	if dx < 0 {
+		w.facingLeft = true
+	}
+	if dx > 0 {
+		w.facingLeft = false
+	}
+	x, y := w.x+dx, w.y+dy
+	for _, p := range w.hitbox {
+		if level.RGBAAt(x+p.x, y+p.y).A > 127 {
+			return
+		}
+	}
+	w.x, w.y = x, y
+}
